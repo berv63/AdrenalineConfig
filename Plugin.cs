@@ -2,10 +2,12 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using System;
+using UnityEngine;
 
 namespace AdrenalineConfig
 {
-    // Every place the game adds or removes adrenaline. The value doubles as the index into AdrenalineConfigPlugin.sourcePercent.
+    // Every place the game adds or removes adrenaline. The value doubles as the index into AdrenalineConfigPlugin.sourceMultiplier.
     internal enum Source
     {
         MeleeHit,
@@ -38,10 +40,10 @@ namespace AdrenalineConfig
         internal static ConfigEntry<bool> modEnabled;
         internal static ConfigEntry<int> requirementPercent;
         internal static ConfigEntry<bool> resizeBar;
-        internal static ConfigEntry<int> effectDurationPercent;
-        internal static ConfigEntry<int> allGainsPercent;
-        internal static ConfigEntry<int> decayDelayPercent;
-        internal static readonly ConfigEntry<int>[] sourcePercent = new ConfigEntry<int>[(int)Source.Count];
+        internal static ConfigEntry<float> effectDurationMultiplier;
+        internal static ConfigEntry<float> allGainsMultiplier;
+        internal static ConfigEntry<float> decayDelayMultiplier;
+        internal static readonly Func<float>[] sourceMultiplier = new Func<float>[(int)Source.Count];
         internal static ConfigEntry<bool> scaleWithEnemies;
         internal static ConfigEntry<int> bonusPerExtraEnemy;
         internal static ConfigEntry<float> enemyRange;
@@ -53,27 +55,27 @@ namespace AdrenalineConfig
             instance = this;
             logger = Logger;
 
-            modEnabled = Config.Bind("General", "Enabled", true, "Disabled: adrenaline behaves as in the unmodded game. All values below are percentages of the game's own values, 100 changes nothing.");
+            modEnabled = Config.Bind("General", "Enabled", true, "Disabled: adrenaline behaves as in the unmodded game. Multipliers of 1 and percentages of 100 change nothing.");
 
-            requirementPercent = Config.Bind("Trigger", "Adrenaline required", 100, new ConfigDescription("Adrenaline an item needs before its effect triggers, as a percentage of the item's own value. 50 triggers every item at half its usual adrenaline, 200 at double.", new AcceptableValueRange<int>(1, 1000)));
+            requirementPercent = Config.Bind("Trigger", "Adrenaline required", 100, new ConfigDescription("Adrenaline an item needs before its effect triggers, as a percentage of the item's own value. 50 triggers every item at half its usual adrenaline.", new AcceptableValueRange<int>(1, 100)));
             resizeBar = Config.Bind("Trigger", "Resize adrenaline bar", true, "Enabled: the adrenaline bar gets shorter or longer with the adrenaline required, as it does between items in the unmodded game. Disabled: the bar keeps the length the item would normally give it.");
-            effectDurationPercent = Config.Bind("Trigger", "Effect duration", 100, new ConfigDescription("Duration of the effect an item triggers at full adrenaline. Applies to effects triggered after the change.", new AcceptableValueRange<int>(1, 1000)));
+            effectDurationMultiplier = BindMultiplier("Trigger", "Effect duration multiplier", "Multiplies the duration of the effect an item triggers at full adrenaline. Applies to effects triggered after the change.");
 
-            allGainsPercent = Config.Bind("Gain", "All gains", 100, Percent("Applies to every adrenaline gain, on top of the settings for the individual sources below."));
-            BindSource(Source.MeleeHit, "Gain", "Melee hit", "Adrenaline gained by hitting an enemy with a melee attack.");
-            BindSource(Source.ProjectileHit, "Gain", "Projectile hit", "Adrenaline gained by hitting an enemy with an arrow, bolt, spell or other projectile.");
-            BindSource(Source.Block, "Gain", "Block", "Adrenaline gained by blocking an attack.");
-            BindSource(Source.Parry, "Gain", "Parry", "Adrenaline gained by parrying an attack.");
-            BindSource(Source.PerfectDodge, "Gain", "Perfect dodge", "Adrenaline gained by dodging through an attack.");
-            BindSource(Source.StaggerEnemy, "Gain", "Stagger enemy", "Adrenaline gained by staggering an enemy.");
-            BindSource(Source.ForsakenPower, "Gain", "Forsaken power", "Adrenaline gained by activating a forsaken power.");
-            BindSource(Source.StatusEffect, "Gain", "Status effects", "Adrenaline granted up front by status effects, such as consumables.");
-            BindSource(Source.WeaponUse, "Gain", "Weapon use", "Adrenaline gained by using a weapon that grants it on every attack, whether it hits or not.");
+            allGainsMultiplier = BindMultiplier("Gain multipliers", "All gains", "Multiplies every adrenaline gain, on top of the multipliers for the individual sources below.");
+            BindGain(Source.MeleeHit, "Melee hit", "Multiplies adrenaline gained by hitting an enemy with a melee attack.");
+            BindGain(Source.ProjectileHit, "Projectile hit", "Multiplies adrenaline gained by hitting an enemy with an arrow, bolt, spell or other projectile.");
+            BindGain(Source.Block, "Block", "Multiplies adrenaline gained by blocking an attack.");
+            BindGain(Source.Parry, "Parry", "Multiplies adrenaline gained by parrying an attack.");
+            BindGain(Source.PerfectDodge, "Perfect dodge", "Multiplies adrenaline gained by dodging through an attack.");
+            BindGain(Source.StaggerEnemy, "Stagger enemy", "Multiplies adrenaline gained by staggering an enemy.");
+            BindGain(Source.ForsakenPower, "Forsaken power", "Multiplies adrenaline gained by activating a forsaken power.");
+            BindGain(Source.StatusEffect, "Status effects", "Multiplies adrenaline granted up front by status effects, such as consumables.");
+            BindGain(Source.WeaponUse, "Weapon use", "Multiplies adrenaline gained by using a weapon that grants it on every attack, whether it hits or not.");
 
-            BindSource(Source.MissedAttack, "Loss", "Missed attack", "Adrenaline lost when a melee attack hits nothing. 0 removes the penalty.");
-            BindSource(Source.DamageTaken, "Loss", "Damage taken", "Adrenaline lost when taking a hit without blocking it. 0 removes the penalty.");
-            BindSource(Source.Decay, "Loss", "Decay rate", "Speed at which adrenaline drains away out of combat. 0 keeps adrenaline until it is used.");
-            decayDelayPercent = Config.Bind("Loss", "Decay delay", 100, Percent("Time after the last adrenaline gain before adrenaline starts to drain."));
+            BindLoss(Source.MissedAttack, "Missed attack", "Adrenaline lost when a melee attack hits nothing, as a percentage of the game's own value. 0 removes the penalty.");
+            BindLoss(Source.DamageTaken, "Damage taken", "Adrenaline lost when taking a hit without blocking it, as a percentage of the game's own value. 0 removes the penalty.");
+            BindLoss(Source.Decay, "Decay rate", "Speed at which adrenaline drains away out of combat, as a percentage of the game's own value. 0 keeps adrenaline until it is used.");
+            decayDelayMultiplier = BindMultiplier("Loss", "Decay delay multiplier", "Multiplies the time after the last adrenaline gain before adrenaline starts to drain.");
 
             scaleWithEnemies = Config.Bind("Nearby enemies", "Scale gain with nearby enemies", false, "Enabled: every adrenaline gain is increased for each enemy nearby beyond the first. Enemies count while they are hostile, alerted and within range.");
             bonusPerExtraEnemy = Config.Bind("Nearby enemies", "Gain bonus per extra enemy", 25, new ConfigDescription("Percent added to adrenaline gains for each nearby enemy beyond the first. At 25, two enemies give 125% and three give 150%.", new AcceptableValueRange<int>(0, 500)));
@@ -91,15 +93,40 @@ namespace AdrenalineConfig
             instance = null;
         }
 
-        private static ConfigDescription Percent(string description) => new ConfigDescription(description, new AcceptableValueRange<int>(0, 1000));
-
-        private void BindSource(Source source, string section, string key, string description)
+        // Settings only go in the direction that makes adrenaline easier: gains can be raised, losses and the requirement lowered.
+        // Multipliers go from 1 to 10 in steps of 0.1, whatever a slider or a hand edited config file gives.
+        private ConfigEntry<float> BindMultiplier(string section, string key, string description)
         {
-            sourcePercent[(int)source] = Config.Bind(section, key, 100, Percent(description));
+            ConfigEntry<float> entry = Config.Bind(section, key, 1f, new ConfigDescription(description + " 1 to 10 in steps of 0.1.", new AcceptableValueRange<float>(1f, 10f)));
+
+            void RoundToStep()
+            {
+                float rounded = Mathf.Round(entry.Value * 10f) / 10f;
+                if (!Mathf.Approximately(rounded, entry.Value))
+                    entry.Value = rounded;
+            }
+
+            entry.SettingChanged += (sender, args) => RoundToStep();
+            RoundToStep();
+            return entry;
+        }
+
+        private void BindGain(Source source, string key, string description)
+        {
+            ConfigEntry<float> entry = BindMultiplier("Gain multipliers", key, description);
+            sourceMultiplier[(int)source] = () => entry.Value;
+        }
+
+        private void BindLoss(Source source, string key, string description)
+        {
+            ConfigEntry<int> entry = Config.Bind("Loss", key, 100, new ConfigDescription(description, new AcceptableValueRange<int>(0, 100)));
+            sourceMultiplier[(int)source] = () => entry.Value / 100f;
         }
 
         internal static float Multiplier(ConfigEntry<int> percent) => modEnabled.Value ? percent.Value / 100f : 1f;
 
-        internal static float Multiplier(Source source) => Multiplier(sourcePercent[(int)source]);
+        internal static float Multiplier(ConfigEntry<float> multiplier) => modEnabled.Value ? multiplier.Value : 1f;
+
+        internal static float Multiplier(Source source) => modEnabled.Value ? sourceMultiplier[(int)source]() : 1f;
     }
 }

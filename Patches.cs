@@ -120,7 +120,7 @@ namespace AdrenalineConfig
 
             if (v > 0f)
             {
-                v *= Multiplier(allGainsPercent) * NearbyEnemies.GainMultiplier(__instance);
+                v *= Multiplier(allGainsMultiplier) * NearbyEnemies.GainMultiplier(__instance);
                 __state = v > 0f && __instance.GetMaxAdrenaline() > 0f;
             }
         }
@@ -129,7 +129,7 @@ namespace AdrenalineConfig
         private static void Postfix(Player __instance, bool __state)
         {
             if (__state)
-                __instance.m_adrenalineDegenTimer *= Multiplier(decayDelayPercent);
+                __instance.m_adrenalineDegenTimer *= Multiplier(decayDelayMultiplier);
         }
 
         private static void Finalizer(Player __instance)
@@ -232,7 +232,7 @@ namespace AdrenalineConfig
                 return;
 
             __state = statusEffect.m_ttl;
-            statusEffect.m_ttl *= Multiplier(effectDurationPercent);
+            statusEffect.m_ttl *= Multiplier(effectDurationMultiplier);
         }
 
         private static void Finalizer(StatusEffect statusEffect, float __state)
